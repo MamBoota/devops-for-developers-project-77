@@ -16,7 +16,7 @@ IaC для приложения на **двух web-узлах** (Docker), **Pos
 |--------|------------|
 | **`make start`** | Коллекции Ansible → плейбук `prepare,deploy,monitoring` → **`make relay-up`** (туннель на VPS, снаружи открывается домен). |
 | **`make stop`** | **`make relay-stop`** → **`terraform destroy`** (в т.ч. Ansible destroy из Terraform). |
-| **`make test`** | `terraform init` + `validate`, проверки Ansible, затем HTTP(S) по домену (нужен поднятый стек и туннель). |
+| **`make test`** | **Локально** (есть `.vault_pass`): ping VM, плейбук, HTTP по домену. **В GitHub Actions** / без `.vault_pass`: только `terraform validate` + `ansible-playbook --syntax-check` (секрет vault в репозиторий не кладётся). |
 | **`make upmon-probe`** | Проверка URL и сигнал в [Upmon](https://app.upmon.com/) (нужен `scripts/upmon.local.env`, см. [docs/upmon.md](docs/upmon.md)). |
 | **`make tf-apply`** | Синхронизация state, DNS-check, ресурсы Datadog (секреты в `terraform/secrets.auto.tfvars`). |
 

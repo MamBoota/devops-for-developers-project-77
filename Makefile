@@ -38,42 +38,48 @@ upmon-probe:
 	@test -f scripts/upmon.local.env || (echo "Создай scripts/upmon.local.env: cp scripts/upmon.local.env.example scripts/upmon.local.env и задай UPMON_PING_URL"; exit 1)
 	@./scripts/upmon-probe.sh
 
-# Проверки: terraform init + validate (VPN), Ansible, затем строгий HTTPS тест как в project-76 (нужен relay-up и VPS nginx).
+# Проверки: terraform validate; локально с .vault_pass — ping VM, self-heal, HTTP. В CI нет .vault_pass — только syntax-check (без расшифровки vault).
 test: ansible-deps tf-validate
-	ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible -i $(ANSIBLE_DIR)/inventory.ini all -m ping --vault-password-file .vault_pass
-	ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --syntax-check --vault-password-file .vault_pass
-	@ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --tags prepare,deploy,monitoring --vault-password-file .vault_pass >/tmp/make-test-self-heal.log 2>&1 || (echo "Self-heal failed. Last lines:"; tail -n 40 /tmp/make-test-self-heal.log; exit 1)
-	@url="$$(terraform -chdir=$(TF_DIR) output -raw application_url 2>/dev/null || true)"; \
-	if [ -z "$$url" ] && [ -f "$(TF_DIR)/terraform.tfvars" ]; then \
-		domain=$$(awk -F'"' '/redmine_domain/{print $$2; exit}' "$(TF_DIR)/terraform.tfvars"); \
-		if [ -n "$$domain" ]; then url="https://$$domain"; fi; \
-	fi; \
-	if [ -z "$$url" ]; then url="https://$(DOMAIN)"; fi; \
-	url="$${url%/}"; \
-	echo "Testing $$url (TLS на VPS; локальный lb-1 — HTTP, см. README и make relay-up) ..."; \
-	ready=0; \
-	for i in {1..15}; do \
-		code=$$(curl --max-time 8 -s -o /dev/null -w '%{http_code}' "$$url"); \
-		echo "warmup $$i:$$code"; \
-		if [[ "$$code" == "200" || "$$code" == "301" || "$$code" == "302" ]]; then ready=1; break; fi; \
-		sleep 1; \
-	done; \
-	if [[ $$ready -ne 1 ]]; then \
-		echo "FAIL: нет HTTP 200/301/302 за warm-up. Выполни make start (деплой+tunnel), проверь Nginx на VPS → 127.0.0.1:$(RELAY_REMOTE_PORT). См. docs/vps-relay-nginx.conf.example"; \
-		exit 1; \
-	fi; \
-	ok=1; \
-	for i in {1..10}; do \
-		code=$$(curl --max-time 8 -s -o /dev/null -w '%{http_code}' "$$url"); \
-		echo "$$i:$$code"; \
-		if [[ "$$code" != "200" && "$$code" != "301" && "$$code" != "302" ]]; then ok=0; fi; \
-		sleep 1; \
-	done; \
-	if [[ $$ok -eq 1 ]]; then \
-		echo "PASS: 10/10 ответов в ожидаемых кодах (200/301/302)"; \
+	@if [ -n "$$GITHUB_ACTIONS" ] || [ -n "$$CI" ] || [ ! -f .vault_pass ]; then \
+		echo "=== CI или нет .vault_pass: ansible syntax-check без vault (без SSH к VM) ==="; \
+		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --syntax-check; \
+		echo "OK: статические проверки (Terraform + Ansible syntax). Полный прогон: локально с .vault_pass выполни make test."; \
 	else \
-		echo "FAIL: встречен неожиданный HTTP-код"; \
-		exit 1; \
+		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible -i $(ANSIBLE_DIR)/inventory.ini all -m ping --vault-password-file .vault_pass; \
+		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --syntax-check --vault-password-file .vault_pass; \
+		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --tags prepare,deploy,monitoring --vault-password-file .vault_pass >/tmp/make-test-self-heal.log 2>&1 || (echo "Self-heal failed. Last lines:"; tail -n 40 /tmp/make-test-self-heal.log; exit 1); \
+		url="$$(terraform -chdir=$(TF_DIR) output -raw application_url 2>/dev/null || true)"; \
+		if [ -z "$$url" ] && [ -f "$(TF_DIR)/terraform.tfvars" ]; then \
+			domain=$$(awk -F'"' '/redmine_domain/{print $$2; exit}' "$(TF_DIR)/terraform.tfvars"); \
+			if [ -n "$$domain" ]; then url="https://$$domain"; fi; \
+		fi; \
+		if [ -z "$$url" ]; then url="https://$(DOMAIN)"; fi; \
+		url="$${url%/}"; \
+		echo "Testing $$url (TLS на VPS; локальный lb-1 — HTTP, см. README и make relay-up) ..."; \
+		ready=0; \
+		for i in {1..15}; do \
+			code=$$(curl --max-time 8 -s -o /dev/null -w '%{http_code}' "$$url"); \
+			echo "warmup $$i:$$code"; \
+			if [[ "$$code" == "200" || "$$code" == "301" || "$$code" == "302" ]]; then ready=1; break; fi; \
+			sleep 1; \
+		done; \
+		if [[ $$ready -ne 1 ]]; then \
+			echo "FAIL: нет HTTP 200/301/302 за warm-up. Выполни make start (деплой+tunnel), проверь Nginx на VPS → 127.0.0.1:$(RELAY_REMOTE_PORT). См. docs/vps-relay-nginx.conf.example"; \
+			exit 1; \
+		fi; \
+		ok=1; \
+		for i in {1..10}; do \
+			code=$$(curl --max-time 8 -s -o /dev/null -w '%{http_code}' "$$url"); \
+			echo "$$i:$$code"; \
+			if [[ "$$code" != "200" && "$$code" != "301" && "$$code" != "302" ]]; then ok=0; fi; \
+			sleep 1; \
+		done; \
+		if [[ $$ok -eq 1 ]]; then \
+			echo "PASS: 10/10 ответов в ожидаемых кодах (200/301/302)"; \
+		else \
+			echo "FAIL: встречен неожиданный HTTP-код"; \
+			exit 1; \
+		fi; \
 	fi
 
 relay-up:
