@@ -7,7 +7,7 @@ variable "ansible_inventory_path" {
 variable "ansible_playbook_deploy" {
   description = "Playbook that configures application + DB + LB + monitoring"
   type        = string
-  default     = "../ansible/site.yml"
+  default     = "../ansible/playbook.yml"
 }
 
 variable "ansible_playbook_destroy" {

@@ -1,7 +1,0 @@
----
-- name: Configure Nginx LB + Prometheus on lbservers
-  hosts: lbservers
-  become: true
-  roles:
-    - loadbalancer
-

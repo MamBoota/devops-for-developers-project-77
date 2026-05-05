@@ -77,7 +77,8 @@
   register: lb_http_healthcheck
   retries: 10
   delay: 3
-  until: lb_http_healthcheck.status in [200, 301, 302]
+  until: lb_http_healthcheck.status in [301, 302]
+  when: "'deploy' in ansible_run_tags or 'all' in ansible_run_tags"
 
 - name: Check LB endpoint over HTTPS (self-signed)
   ansible.builtin.uri:
@@ -90,4 +91,5 @@
   retries: 10
   delay: 3
   until: lb_https_healthcheck.status in [200, 301, 302]
+  when: "'deploy' in ansible_run_tags or 'all' in ansible_run_tags"
 

@@ -3,7 +3,7 @@
 # You can override paths if you reorganize the Ansible directory.
 #
 # ansible_inventory_path      = "../ansible/inventory.ini"
-# ansible_playbook_deploy     = "../ansible/site.yml"
+# ansible_playbook_deploy     = "../ansible/playbook.yml"
 # ansible_playbook_destroy    = "../ansible/destroy.yml"
 # vault_password_file         = "../.vault_pass"
 

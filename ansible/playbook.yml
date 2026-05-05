@@ -1,0 +1,24 @@
+---
+- name: Prepare database server
+  hosts: dbservers
+  become: true
+  roles:
+    - role: postgresql
+      tags: [prepare, deploy]
+
+- name: Prepare and deploy web application
+  hosts: webservers
+  become: true
+  roles:
+    - role: docker
+      tags: [prepare]
+    - role: redmine
+      tags: [deploy]
+
+- name: Prepare and configure load balancer
+  hosts: lbservers
+  become: true
+  roles:
+    - role: loadbalancer
+      tags: [prepare, deploy]
+

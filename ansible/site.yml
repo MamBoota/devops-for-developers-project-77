@@ -1,5 +1,0 @@
----
-- import_playbook: playbook-db.yml
-- import_playbook: playbook-web.yml
-- import_playbook: playbook-lb.yml
-

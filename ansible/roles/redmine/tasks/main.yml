@@ -17,6 +17,44 @@
     dest: /opt/redmine/.env
     mode: "0600"
 
+- name: Pull application image on control node
+  ansible.builtin.command:
+    cmd: "docker image inspect {{ redmine_image }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: redmine_image_present
+  changed_when: false
+  failed_when: false
+
+- name: Pull application image on control node
+  ansible.builtin.command:
+    cmd: "docker pull {{ redmine_image }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  when: redmine_image_present.rc != 0
+
+- name: Save application image archive on control node
+  ansible.builtin.command:
+    cmd: "docker save -o {{ redmine_image_archive_local_path }} {{ redmine_image }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+
+- name: Copy image archive to web host
+  ansible.builtin.copy:
+    src: "{{ redmine_image_archive_local_path }}"
+    dest: "{{ redmine_image_archive_remote_path }}"
+    mode: "0644"
+
+- name: Load application image on web host
+  ansible.builtin.command:
+    cmd: "docker load -i {{ redmine_image_archive_remote_path }}"
+  changed_when: false
+
 - name: Start or update Redmine container
   community.docker.docker_container:
     name: "{{ redmine_container_name }}"

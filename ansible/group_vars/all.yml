@@ -2,11 +2,13 @@
 pip_install_packages:
   - name: docker
 
-# Redmine container settings
-redmine_image: "redmine:6.1"
+# App container settings (project-74 image)
+redmine_image: "mamboota/devops-for-developers-project-74:latest"
+redmine_image_archive_local_path: "/tmp/project74-image.tar"
+redmine_image_archive_remote_path: "/tmp/project74-image.tar"
 redmine_port: 80
-redmine_container_port: 3000
-redmine_container_name: "redmine"
+redmine_container_port: 8080
+redmine_container_name: "project74-app"
 redmine_restart_policy: "unless-stopped"
 
 # DB settings
