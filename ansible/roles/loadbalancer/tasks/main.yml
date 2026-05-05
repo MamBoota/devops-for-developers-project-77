@@ -12,31 +12,7 @@
     update_cache: false
   when: nginx_installed.rc != 0
 
-- name: Install OpenSSL
-  ansible.builtin.apt:
-    name: openssl
-    state: present
-    update_cache: false
-  when: nginx_installed.rc != 0
-
-- name: Ensure SSL directory exists
-  ansible.builtin.file:
-    path: /etc/nginx/ssl
-    state: directory
-    mode: "0755"
-
-- name: Create self-signed certificate for HTTPS
-  ansible.builtin.command: >
-    openssl req -x509 -nodes -days 365
-    -newkey rsa:2048
-    -keyout /etc/nginx/ssl/server.key
-    -out /etc/nginx/ssl/server.crt
-    -subj "/CN={{ redmine_domain }}"
-    -addext "subjectAltName=DNS:{{ redmine_domain }}"
-  args:
-    creates: /etc/nginx/ssl/server.crt
-
-- name: Configure Nginx reverse proxy for Redmine (HTTPS)
+- name: Configure Nginx reverse proxy for Redmine (HTTP, для VPS relay как в project-76)
   ansible.builtin.template:
     src: redmine-lb.conf.j2
     dest: /etc/nginx/sites-available/redmine-lb.conf
@@ -69,30 +45,13 @@
 - name: Apply pending nginx handler changes
   ansible.builtin.meta: flush_handlers
 
-- name: Check LB endpoint over HTTP (redirect allowed)
+- name: Check LB endpoint
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ redmine_port }}/"
     method: GET
-    follow_redirects: none
-    status_code: [301, 302]
-  register: lb_http_healthcheck
-  retries: 10
-  delay: 3
-  until: lb_http_healthcheck.status in [301, 302]
-  when: "'deploy' in ansible_run_tags or 'all' in ansible_run_tags"
-
-- name: Check LB endpoint over HTTPS (self-signed)
-  ansible.builtin.uri:
-    url: "https://127.0.0.1/"
-    method: GET
-    headers:
-      Host: "{{ redmine_domain }}"
-    return_content: false
-    validate_certs: false
     status_code: [200, 301, 302]
-  register: lb_https_healthcheck
+  register: lb_healthcheck
   retries: 10
   delay: 3
-  until: lb_https_healthcheck.status in [200, 301, 302]
+  until: lb_healthcheck.status in [200, 301, 302]
   when: "'deploy' in ansible_run_tags or 'all' in ansible_run_tags"
-

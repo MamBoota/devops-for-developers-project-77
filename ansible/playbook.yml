@@ -11,9 +11,16 @@
   become: true
   roles:
     - role: docker
-      tags: [prepare]
+      tags: [prepare, deploy]
     - role: redmine
       tags: [deploy]
+
+- name: Install Datadog agent on webservers
+  hosts: webservers
+  become: true
+  roles:
+    - role: monitoring_datadog
+      tags: [monitoring]
 
 - name: Prepare and configure load balancer
   hosts: lbservers

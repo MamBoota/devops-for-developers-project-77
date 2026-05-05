@@ -44,22 +44,32 @@
   run_once: true
   changed_when: false
 
+- name: Check if application image exists on web host
+  ansible.builtin.command:
+    cmd: "docker image inspect {{ redmine_image }}"
+  register: redmine_image_on_web
+  changed_when: false
+  failed_when: false
+
 - name: Copy image archive to web host
   ansible.builtin.copy:
     src: "{{ redmine_image_archive_local_path }}"
     dest: "{{ redmine_image_archive_remote_path }}"
     mode: "0644"
+  when: redmine_image_on_web.rc != 0
 
 - name: Prune old Docker data before image load
   ansible.builtin.command:
     cmd: docker system prune -af
   changed_when: false
   failed_when: false
+  when: redmine_image_on_web.rc != 0
 
 - name: Load application image on web host
   ansible.builtin.command:
     cmd: "docker load -i {{ redmine_image_archive_remote_path }}"
   changed_when: false
+  when: redmine_image_on_web.rc != 0
 
 - name: Start or update Redmine container
   community.docker.docker_container:

@@ -12,6 +12,10 @@ redmine_container_name: "project74-app"
 redmine_restart_policy: "unless-stopped"
 redmine_domain: "myproj76.ru"
 
+# Datadog agent settings (key comes from Ansible Vault)
+datadog_api_key: "{{ vault_datadog_api_key }}"
+datadog_site: "datadoghq.com"
+
 # DB settings
 # Supported values for redmine_db_adapter: postgresql, mysql
 redmine_db_adapter: "postgresql"

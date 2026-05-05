@@ -7,151 +7,109 @@
 Infrastructure as Code проект для разворачивания веб-приложения:
 
 - 2 web-сервера с приложением в Docker
-- Load Balancer с HTTPS
+- Load Balancer (Nginx) в локальной сети — **HTTP**, как в **project-76**
+- Публичный **HTTPS** на **VPS** + **reverse SSH tunnel** на локальный `lb-1:80`
 - PostgreSQL (локальный VM)
-- Конфигурирование серверов и деплой через Ansible
+- Ansible + Terraform (Terraform Cloud, Datadog monitor)
 
 ## For Reviewer
 
-- Этапы по ТЗ реализованы через IaC workflow: `terraform plan/apply/destroy` + Ansible automation.
-- Основной плейбук: `ansible/playbook.yml` (для подготовки и деплоя).
-- Архитектура в работе: 2 web VM с приложением в Docker-образе `mamboota/devops-for-developers-project-74:latest`, DB VM c PostgreSQL, LB VM с HTTPS.
-- HTTPS на балансировщике настроен через self-signed сертификат (без платных внешних сервисов).
-- Домен подключается через A-запись на IP балансировщика и прокидывается в Nginx/сертификат через Terraform variable `redmine_domain`.
-- Разворачивание и удаление проверены командами `make tf-apply` и `make tf-destroy`.
-- Оговорка: вместо платных managed cloud-сервисов используется уже существующая локальная инфраструктура из `project-76`.
+- Этапы по ТЗ: `terraform plan/apply/destroy` + Ansible.
+- Плейбук: `ansible/playbook.yml`.
+- Стек: 2 web VM (`mamboota/devops-for-developers-project-74:latest`), DB PostgreSQL, **lb-1** с Nginx **без TLS** (прокси на приложения по HTTP).
+- **Публикация в интернет** — как в **project-76**: домен → **VPS** (HTTPS), на VPS `proxy_pass` на `127.0.0.1:18080`; **`make start`** поднимает Ansible и **reverse SSH** на локальный `lb-1:80`.
+- В Terraform **`load_balancer_ip`** — **публичный IP VPS** (A-запись), не LAN lb-1.
+- Мониторинг: Datadog (Ansible + Terraform). **`make start`** = деплой + туннель; **`make stop`** = остановка туннеля + **`terraform destroy`**.
 
 ## Stack
 
-- Terraform (оркестрация Ansible на существующих локальных VMs)
+- Terraform (remote state, DNS check, Datadog)
 - Ansible
 - Docker
+- VPS с публичным IP (relay), по желанию Let’s Encrypt на VPS
 
 ## Project structure
 
-- `terraform` - Terraform orchestration (`null_resource` + `local-exec`)
-- `ansible` - плейбуки и роли для конфигурирования и деплоя на локальные VM
-- `ansible/playbook.yml` - основной плейбук подготовки/деплоя
-- `ansible/requirements.yml` - внешние коллекции для Ansible
-- `Makefile` - команды запуска
+- `terraform` — orchestration (`null_resource` + `local-exec`)
+- `ansible` — плейбуки и роли
+- `docs/vps-relay-nginx.conf.example` — пример `server { }` для Nginx на VPS
+- `Makefile` — деплой, relay, тесты
 
 ## Prerequisites
 
-- Terraform >= 1.5
-- Ansible >= 2.14
-- Terraform Cloud workspace `StudentProj/project-77`:
-  - Execution Mode = `Local` (иначе `local-exec` не сможет достучаться до локальных VMs)
-- Локальные VMs уже подняты и доступны по SSH:
-  - см. `ansible/inventory.ini`
-- `.vault_pass` в корне репозитория (пароль для Ansible Vault)
+- Terraform >= 1.5, Ansible >= 2.14
+- **VPN** при необходимости для Terraform Cloud / registry (`make test`, `make tf-apply`, **`make stop`**)
+- Workspace Terraform Cloud `StudentProj/project-77`, **Execution Mode = Local**
+- Локальные VM по `ansible/inventory.ini`, SSH-ключ (см. inventory)
+- **VPS**: Ubuntu, root по SSH с твоей машины, установлен Nginx, настроен vhost по примеру в `docs/` (порт бэкенда **`127.0.0.1:18080`**)
+- `.vault_pass` в корне репозитория
 
-## Project requirements checklist
+## Публичный доступ (как в project-76)
 
-- Terraform файлы находятся в директории `terraform`
-- Секретные значения не хранятся в открытом виде в Terraform файлах
-- Настройки провайдера вынесены в `terraform/provider.tf`
-- Настройки backend вынесены в `terraform/backend.tf`
-- Локальный state игнорируется в `.gitignore`
+1. На **VPS** включи сайт с TLS (например Let’s Encrypt) и `proxy_pass http://127.0.0.1:18080;` — см. **`docs/vps-relay-nginx.conf.example`**.
+2. **A-запись** домена → **публичный IP VPS** (этот же IP укажи в **`load_balancer_ip`** в `terraform.tfvars`).
+3. Локально одной командой: **`make start`** (Ansible + reverse SSH на VPS).
+4. Проверка: `curl -I https://<домен>/`
 
-## Quick start
-1. В Terraform Cloud открой workspace `StudentProj / project-77` и поставь Execution Mode = `Local`:
-   иначе `local-exec` выполнится на инфраструктуре Terraform Cloud и не сможет подключиться по SSH к локальным VM.
+Переопределение без правки Makefile: `make start VPS_USER=ubuntu VPS_IP=1.2.3.4` (см. переменные в начале `Makefile`).
 
-2. Создай файл `.vault_pass` в корне репозитория (как пароль для Ansible Vault):
-   ```bash
-   printf 'YOUR_VAULT_PASSWORD\n' > .vault_pass
-   chmod 600 .vault_pass
-   ```
+## Две основные команды
 
-3. Убедись, что inventory и vault-секреты уже лежат в репозитории:
-   - `ansible/inventory.ini`
-   - `ansible/group_vars/webservers/vault.yml`
-   - `ansible/group_vars/dbservers/vault.yml`
+| Команда | Что делает |
+|--------|------------|
+| **`make start`** | Коллекции Ansible → плейбук **`prepare,deploy,monitoring`** → **туннель на VPS** (сайт снаружи начинает ходить на локальный LB). |
+| **`make stop`** | **Останавливает туннель**, затем **`terraform destroy`** (в т.ч. Ansible destroy из Terraform). Нужен VPN, если без него недоступен Terraform Cloud. |
 
-4. Запусти Terraform оркестрацию деплоя:
-   ```bash
-   make tf-init
-   make tf-fmt
-   make tf-validate
-   make tf-plan
-   make tf-apply
-   ```
+Остальное (по необходимости):
 
-4a. Локальные команды этапа деплоя (Ansible tags):
-   ```bash
-   make ansible-deps
-   make ansible-prepare
-   make ansible-deploy
-   ```
+- **`make test`** — проверки курса: Terraform validate, Ansible, HTTP по домену (сайт должен уже отвечать после `make start`).
+- **`make relay-up` / `make relay-stop` / `make relay-status` / `make relay-logs`** — только туннель (если деплой уже делал отдельно).
+- **`make tf-apply`** — state, DNS-check, Datadog monitor (секреты в `terraform/secrets.auto.tfvars`).
 
-5. Проверка:
-   - LB слушает HTTPS на домене `redmine_domain`. Так как сертификат self-signed, используй `-k`:
-     ```bash
-     curl -k https://YOUR_DOMAIN/
-     ```
+Шаблоны: `terraform/terraform.tfvars.example`, `terraform/secrets.auto.tfvars.example`.
 
-## Domain setup (Step 4)
+## Первый запуск (кратко)
 
-1. Создай A-запись у регистратора:
-   - `YOUR_DOMAIN` -> `192.168.2.5` (или ваш IP балансировщика).
-2. В Terraform укажи домен и IP в `terraform/terraform.tfvars`:
-   ```hcl
-   redmine_domain   = "YOUR_DOMAIN"
-   load_balancer_ip = "192.168.2.5"
-   ```
-3. Применяй инфраструктуру:
-   ```bash
-   make tf-apply
-   ```
-4. После `apply` URL доступен в output `application_url`.
+1. Terraform Cloud: workspace **Local**.
+2. `.vault_pass`, vault в `ansible/group_vars/`.
+3. VPS: Nginx по **`docs/vps-relay-nginx.conf.example`**, certbot.
+4. **`terraform.tfvars`**: домен и **`load_balancer_ip` = IP VPS**; при работе с Datadog в Terraform — `secrets.auto.tfvars`.
+5. **`make tf-init`** (с VPN, один раз), при необходимости **`make tf-apply`**.
+6. **`make start`** — дальше правки приложения снова **`make start`**.
 
-## Vault notes
-- Секреты для приложения и БД лежат в:
-  - `ansible/group_vars/webservers/vault.yml`
-  - `ansible/group_vars/dbservers/vault.yml`
-- Для расшифровки нужен только `.vault_pass` (создан на шаге 2).
-- Быстрая проверка доступности узлов:
-  ```bash
-  ansible -i ansible/inventory.ini all -m ping --vault-password-file .vault_pass
-  ```
+## Domain setup и Terraform
 
-## Destroy
+- DNS: **домен → VPS**, не на приватный Multipass.
+- В `terraform.tfvars` тот же публичный IP, что в A-записи.
+- `terraform output application_url` — `https://<домен>/`.
 
-Чтобы удалить инфраструктуру:
+## Monitoring
+
+- Vault: `vault_datadog_api_key` в `ansible/group_vars/webservers/vault.yml`.
+- `make start` / `make ansible-monitoring`.
+- Monitor в Datadog: `secrets.auto.tfvars` + `make tf-apply`.
+
+## Остановка
 
 ```bash
-make tf-destroy
+make stop
 ```
 
-## Useful Terraform commands
+## Команды Terraform / Ansible
 
 ```bash
-make tf-init        # init backend + providers
-make tf-fmt         # форматирование *.tf
-make tf-validate    # проверка конфигурации
-make tf-plan        # план изменений
-make tf-apply       # применение изменений
-make tf-destroy     # удаление инфраструктуры
+make tf-init make tf-validate make tf-plan make tf-apply make tf-destroy
+make ansible-deps make ansible-prepare make ansible-deploy make ansible-monitoring
 ```
 
-## Useful Ansible commands
+## VPN и Terraform
 
-```bash
-make ansible-deps      # установка коллекций из ansible/requirements.yml
-make ansible-prepare   # запуск только подготовки (тег prepare)
-make ansible-deploy    # запуск только деплоя (тег deploy)
-```
+Backend — Terraform Cloud, провайдеры — **registry.terraform.io**. Для стабильной работы **`make tf-init` / `make test` / `make tf-apply` / `make stop`** используй VPN, если без него эти хосты из твоей сети недоступны. В `Makefile` у **`tf-init`** до трёх попыток и кэш `~/.terraform.d/plugin-cache`.
 
 ## Important note for remote backend
 
-Если backend удаленный и вы нажали `Ctrl+C` на этапе подтверждения/применения, операция может остаться в облаке в подвешенном состоянии. В таком случае нужно отменить run через CLI/интерфейс облака, а не просто перезапускать команду локально.
+Если прервал `apply`/`destroy`, проверь незавершённые run в Terraform Cloud.
 
 ## Important note for this setup
 
-Этот проект использует уже существующую локальную инфраструктуру (`project-76`): web/db/lb узлы не создаются Terraform-ресурсами в облаке, а настраиваются Ansible через `terraform apply` (`null_resource` + `local-exec`).
-
-## Current verified status
-
-- `make tf-apply` выполнен успешно в текущем окружении.
-- `make tf-destroy` выполнен успешно в текущем окружении.
-- Приложение публикуется по доменному URL (см. output `application_url` после `make tf-apply`).
+Локальная инфраструктура из **project-76**; публичная выдача — **relay на VPS**, как в **project-76**, а не self-signed HTTPS на Multipass-LB.

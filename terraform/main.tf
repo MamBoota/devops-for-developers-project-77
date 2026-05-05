@@ -55,15 +55,18 @@ resource "null_resource" "deploy" {
       set -euo pipefail
 
       export ANSIBLE_FORCE_COLOR=true
+      export ANSIBLE_COLLECTIONS_PATH="${path.root}/../.ansible/collections"
+      mkdir -p "$ANSIBLE_COLLECTIONS_PATH"
 
       # Ensure Ansible collection modules are present (needed for community.docker).
       if ! ansible-galaxy collection list community.docker >/dev/null 2>&1; then
-        ansible-galaxy collection install -r "${self.triggers.ansible_requirements_abs}"
+        ansible-galaxy collection install -r "${self.triggers.ansible_requirements_abs}" -p "$ANSIBLE_COLLECTIONS_PATH"
       fi
 
       ansible-playbook \
         -i "${local.ansible_inventory_abs}" \
         "${local.ansible_deploy_playbook_abs}" \
+        --tags prepare,deploy,monitoring \
         --extra-vars "redmine_domain=${var.redmine_domain}" \
         --vault-password-file "${local.vault_password_abs}"
     EOT
@@ -85,9 +88,11 @@ resource "null_resource" "destroy" {
     interpreter = ["/bin/bash", "-lc"]
     command     = <<-EOT
       set -euo pipefail
+      export ANSIBLE_COLLECTIONS_PATH="${path.root}/../.ansible/collections"
+      mkdir -p "$ANSIBLE_COLLECTIONS_PATH"
 
       if ! ansible-galaxy collection list community.docker >/dev/null 2>&1; then
-        ansible-galaxy collection install -r "${lookup(self.triggers, "ansible_requirements_abs", "${path.root}/../ansible/requirements.yml")}" || true
+        ansible-galaxy collection install -r "${lookup(self.triggers, "ansible_requirements_abs", "${path.root}/../ansible/requirements.yml")}" -p "$ANSIBLE_COLLECTIONS_PATH" || true
       fi
 
       # Skip cleanup if old state points to an obsolete path.
