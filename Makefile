@@ -148,14 +148,17 @@ relay-logs:
 	@echo "Хвост $(RELAY_LOG):"
 	@tail -n 40 "$(RELAY_LOG)" 2>/dev/null || echo "нет файла"
 
-# В GitHub Actions нет Terraform Cloud token в ~/.terraform.d — полный init к HCP падает.
-# В CI: init -backend=false (провайдеры + validate), локально: обычный remote backend.
+# В GitHub Actions и в Docker (Hexlet: docker build RUN make …) нет Terraform Cloud token.
+# Там init сразу с -backend=false; локально вне контейнера — обычный remote backend + fallback ниже.
 tf-init:
 	@mkdir -p "$(TF_PLUGIN_CACHE_DIR)"; \
 	INIT_EXTRA=""; \
 	if [ -n "$$GITHUB_ACTIONS" ] || [ -n "$$CI" ]; then \
 		INIT_EXTRA="-backend=false"; \
 		echo "terraform init: CI — только провайдеры (-backend=false), без Terraform Cloud"; \
+	elif [ -f /.dockerenv ]; then \
+		INIT_EXTRA="-backend=false"; \
+		echo "terraform init: Docker — только провайдеры (-backend=false), без Terraform Cloud"; \
 	fi; \
 	n=0; \
 	until [ $$n -ge 3 ]; do \
