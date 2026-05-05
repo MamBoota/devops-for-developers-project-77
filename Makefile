@@ -22,7 +22,7 @@ APP1_IP ?= 192.168.2.2
 APP2_IP ?= 192.168.2.3
 LB_IP ?= 192.168.2.5
 
-.PHONY: start stop test relay-up relay-stop relay-status relay-logs tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy ansible-deps ansible-prepare ansible-deploy ansible-monitoring
+.PHONY: start stop test upmon-probe relay-up relay-stop relay-status relay-logs tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy ansible-deps ansible-prepare ansible-deploy ansible-monitoring
 
 # Один шаг: Ansible (prepare+deploy+monitoring) + reverse SSH на VPS (публичный URL).
 start: ansible-deps
@@ -32,6 +32,11 @@ start: ansible-deps
 # Один шаг: гасим туннель, затем terraform destroy (как в ТЗ курса).
 stop: relay-stop
 	$(MAKE) tf-destroy
+
+# Проверка сайта + сигнал в Upmon (нужен scripts/upmon.local.env из .example, не коммитится).
+upmon-probe:
+	@test -f scripts/upmon.local.env || (echo "Создай scripts/upmon.local.env: cp scripts/upmon.local.env.example scripts/upmon.local.env и задай UPMON_PING_URL"; exit 1)
+	@./scripts/upmon-probe.sh
 
 # Проверки: terraform init + validate (VPN), Ansible, затем строгий HTTPS тест как в project-76 (нужен relay-up и VPS nginx).
 test: ansible-deps tf-validate

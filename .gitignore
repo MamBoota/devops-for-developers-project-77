@@ -10,7 +10,6 @@ terraform.tfstate.backup
 **/*.tfvars
 !*.tfvars.example
 !**/*.tfvars.example
-terraform/secrets.auto.tfvars
 
 venv/
 __pycache__/
@@ -19,3 +18,7 @@ __pycache__/
 
 .vault_pass
 .ansible/
+
+# Upmon: только локально (ping-URL = секрет канала). В git — только *.example.
+scripts/upmon.local.env
+**/upmon.local.env
