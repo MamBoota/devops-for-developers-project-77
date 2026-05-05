@@ -22,7 +22,11 @@ APP1_IP ?= 192.168.2.2
 APP2_IP ?= 192.168.2.3
 LB_IP ?= 192.168.2.5
 
-.PHONY: start stop test upmon-probe relay-up relay-stop relay-status relay-logs tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy ansible-deps ansible-prepare ansible-deploy ansible-monitoring
+.PHONY: start stop test setup upmon-probe relay-up relay-stop relay-status relay-logs tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy ansible-deps ansible-prepare ansible-deploy ansible-monitoring
+
+# Hexlet: docker compose run app make setup (см. github.com/Hexlet/project-action) — без этой цели CI падает.
+setup: ansible-deps tf-init
+	@echo "OK: setup"
 
 # Один шаг: Ansible (prepare+deploy+monitoring) + reverse SSH на VPS (публичный URL).
 start: ansible-deps
@@ -161,6 +165,12 @@ tf-init:
 		n=$$((n+1)); \
 		if [ $$n -lt 3 ]; then echo "terraform init failed, retry $$n/3 in 5s..."; sleep 5; fi; \
 	done; \
+	if [ -z "$$INIT_EXTRA" ]; then \
+		echo "terraform init: нет доступа к remote backend — пробуем -backend=false (validate / образ Hexlet без TFC)..."; \
+		if TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE_DIR)" terraform -chdir=$(TF_DIR) init -input=false -backend=false; then \
+			exit 0; \
+		fi; \
+	fi; \
 	echo "terraform init failed after 3 attempts (VPN / registry.terraform.io / для локали — Terraform Cloud)"; \
 	exit 1
 
