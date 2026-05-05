@@ -22,11 +22,19 @@ APP1_IP ?= 192.168.2.2
 APP2_IP ?= 192.168.2.3
 LB_IP ?= 192.168.2.5
 
-.PHONY: start stop test setup upmon-probe relay-up relay-stop relay-status relay-logs tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy ansible-deps ansible-prepare ansible-deploy ansible-monitoring
+.PHONY: start stop test check setup lint upmon-probe relay-up relay-stop relay-status relay-logs tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy ansible-deps ansible-prepare ansible-deploy ansible-monitoring
 
 # Hexlet: docker compose run app make setup (см. github.com/Hexlet/project-action) — без этой цели CI падает.
 setup: ansible-deps tf-init
 	@echo "OK: setup"
+
+# Образ Hexlet кладёт ansible-lint.yml в корень проекта, код — в подкаталог: ищем конфиг в . и ..
+lint:
+	@cfg=""; for d in . ..; do test -f "$$d/ansible-lint.yml" && cfg="$$d/ansible-lint.yml" && break; done; \
+	if [ -n "$$cfg" ]; then ansible-lint -c "$$cfg" $(ANSIBLE_DIR)/; else ansible-lint $(ANSIBLE_DIR)/; fi
+
+# Некоторые сценарии CI вызывают make check вместо make test.
+check: test
 
 # Один шаг: Ansible (prepare+deploy+monitoring) + reverse SSH на VPS (публичный URL).
 start: ansible-deps
