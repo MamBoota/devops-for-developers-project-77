@@ -1,14 +1,14 @@
 ---
 - name: Check if Datadog Agent is already installed
   ansible.builtin.command: datadog-agent version
-  register: datadog_agent_installed
+  register: monitoring_datadog_datadog_agent_installed
   changed_when: false
   failed_when: false
 
 - name: Install Datadog Agent when missing
   ansible.builtin.include_role:
     name: datadog.dd.agent
-  when: datadog_agent_installed.rc != 0
+  when: monitoring_datadog_datadog_agent_installed.rc != 0
 
 - name: Ensure Datadog http_check config directory exists
   ansible.builtin.file:

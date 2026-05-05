@@ -46,25 +46,26 @@
 - name: Ensure database user exists
   ansible.builtin.command:
     cmd: sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ redmine_db_user }}'"
-  register: postgres_user_exists
+  register: postgresql_user_exists
   changed_when: false
 
 - name: Create database user
   ansible.builtin.command:
     cmd: sudo -u postgres psql -c "CREATE USER {{ redmine_db_user }} WITH PASSWORD '{{ redmine_db_password }}';"
-  when: postgres_user_exists.stdout.strip() != "1"
+  when: postgresql_user_exists.stdout.strip() != "1"
+  changed_when: true
 
 - name: Ensure database exists
   ansible.builtin.command:
     cmd: sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ redmine_db_name }}'"
-  register: postgres_db_exists
+  register: postgresql_db_exists
   changed_when: false
 
 - name: Create Redmine database
   ansible.builtin.command:
     cmd: sudo -u postgres psql -c "CREATE DATABASE {{ redmine_db_name }} OWNER {{ redmine_db_user }};"
-  when: postgres_db_exists.stdout.strip() != "1"
+  when: postgresql_db_exists.stdout.strip() != "1"
+  changed_when: true
 
 - name: Flush handlers to reload config before app deploy
   ansible.builtin.meta: flush_handlers
-

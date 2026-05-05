@@ -28,4 +28,3 @@
   roles:
     - role: loadbalancer
       tags: [prepare, deploy]
-
