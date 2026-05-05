@@ -3,8 +3,7 @@ terraform/backend.tf
 
 .terraform/
 **/.terraform/
-.terraform.lock.hcl
-**/.terraform.lock.hcl
+# .terraform.lock.hcl коммитим — в CI (Hexlet / readonly lock) репозиторий без lock падает на init.
 terraform.tfstate
 terraform.tfstate.backup
 **/terraform.tfstate
