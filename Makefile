@@ -144,17 +144,24 @@ relay-logs:
 	@echo "Хвост $(RELAY_LOG):"
 	@tail -n 40 "$(RELAY_LOG)" 2>/dev/null || echo "нет файла"
 
+# В GitHub Actions нет Terraform Cloud token в ~/.terraform.d — полный init к HCP падает.
+# В CI: init -backend=false (провайдеры + validate), локально: обычный remote backend.
 tf-init:
 	@mkdir -p "$(TF_PLUGIN_CACHE_DIR)"; \
+	INIT_EXTRA=""; \
+	if [ -n "$$GITHUB_ACTIONS" ] || [ -n "$$CI" ]; then \
+		INIT_EXTRA="-backend=false"; \
+		echo "terraform init: CI — только провайдеры (-backend=false), без Terraform Cloud"; \
+	fi; \
 	n=0; \
 	until [ $$n -ge 3 ]; do \
-		if TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE_DIR)" terraform -chdir=$(TF_DIR) init -input=false; then \
+		if TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE_DIR)" terraform -chdir=$(TF_DIR) init -input=false $$INIT_EXTRA; then \
 			exit 0; \
 		fi; \
 		n=$$((n+1)); \
 		if [ $$n -lt 3 ]; then echo "terraform init failed, retry $$n/3 in 5s..."; sleep 5; fi; \
 	done; \
-	echo "terraform init failed after 3 attempts (VPN / Terraform Cloud / registry.terraform.io reachable?)"; \
+	echo "terraform init failed after 3 attempts (VPN / registry.terraform.io / для локали — Terraform Cloud)"; \
 	exit 1
 
 tf-fmt:
