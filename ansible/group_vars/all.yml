@@ -10,6 +10,7 @@ redmine_port: 80
 redmine_container_port: 8080
 redmine_container_name: "project74-app"
 redmine_restart_policy: "unless-stopped"
+redmine_domain: "myproj76.ru"
 
 # DB settings
 # Supported values for redmine_db_adapter: postgresql, mysql

@@ -6,4 +6,6 @@
 # ansible_playbook_deploy     = "../ansible/playbook.yml"
 # ansible_playbook_destroy    = "../ansible/destroy.yml"
 # vault_password_file         = "../.vault_pass"
+# redmine_domain              = "your-domain.example"
+# load_balancer_ip            = "192.168.2.5"
 

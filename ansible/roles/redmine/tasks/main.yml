@@ -50,6 +50,12 @@
     dest: "{{ redmine_image_archive_remote_path }}"
     mode: "0644"
 
+- name: Prune old Docker data before image load
+  ansible.builtin.command:
+    cmd: docker system prune -af
+  changed_when: false
+  failed_when: false
+
 - name: Load application image on web host
   ansible.builtin.command:
     cmd: "docker load -i {{ redmine_image_archive_remote_path }}"

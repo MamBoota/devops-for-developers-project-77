@@ -22,3 +22,15 @@ variable "vault_password_file" {
   default     = "../.vault_pass"
   sensitive   = true
 }
+
+variable "redmine_domain" {
+  description = "Application domain name pointed to load balancer"
+  type        = string
+  default     = "example.com"
+}
+
+variable "load_balancer_ip" {
+  description = "Load balancer public/local IP used in domain A-record"
+  type        = string
+  default     = "192.168.2.5"
+}

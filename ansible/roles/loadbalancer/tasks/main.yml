@@ -31,7 +31,8 @@
     -newkey rsa:2048
     -keyout /etc/nginx/ssl/server.key
     -out /etc/nginx/ssl/server.crt
-    -subj "/CN=localhost"
+    -subj "/CN={{ redmine_domain }}"
+    -addext "subjectAltName=DNS:{{ redmine_domain }}"
   args:
     creates: /etc/nginx/ssl/server.crt
 
@@ -84,6 +85,8 @@
   ansible.builtin.uri:
     url: "https://127.0.0.1/"
     method: GET
+    headers:
+      Host: "{{ redmine_domain }}"
     return_content: false
     validate_certs: false
     status_code: [200, 301, 302]
