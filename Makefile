@@ -1,4 +1,5 @@
-SHELL := /bin/bash
+# POSIX sh: в Docker/Alpine часто нет bash; [[ и {1..n} там не работают.
+SHELL := /bin/sh
 
 TF_DIR=terraform
 ANSIBLE_DIR=ansible
@@ -22,7 +23,7 @@ APP1_IP ?= 192.168.2.2
 APP2_IP ?= 192.168.2.3
 LB_IP ?= 192.168.2.5
 
-.PHONY: start stop test check setup lint upmon-probe relay-up relay-stop relay-status relay-logs tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy ansible-deps ansible-prepare ansible-deploy ansible-monitoring
+.PHONY: start stop test check ci setup lint upmon-probe relay-up relay-stop relay-status relay-logs tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy ansible-deps ansible-prepare ansible-deploy ansible-monitoring
 
 # Hexlet: docker compose run app make setup (см. github.com/Hexlet/project-action) — без этой цели CI падает.
 setup: ansible-deps tf-init
@@ -35,6 +36,8 @@ lint:
 
 # Некоторые сценарии CI вызывают make check вместо make test.
 check: test
+
+ci: lint test
 
 # Один шаг: Ansible (prepare+deploy+monitoring) + reverse SSH на VPS (публичный URL).
 start: ansible-deps
@@ -69,24 +72,26 @@ test: ansible-deps tf-validate
 		url="$${url%/}"; \
 		echo "Testing $$url (TLS на VPS; локальный lb-1 — HTTP, см. README и make relay-up) ..."; \
 		ready=0; \
-		for i in {1..15}; do \
+		i=1; while [ "$$i" -le 15 ]; do \
 			code=$$(curl --max-time 8 -s -o /dev/null -w '%{http_code}' "$$url"); \
 			echo "warmup $$i:$$code"; \
-			if [[ "$$code" == "200" || "$$code" == "301" || "$$code" == "302" ]]; then ready=1; break; fi; \
+			if [ "$$code" = "200" ] || [ "$$code" = "301" ] || [ "$$code" = "302" ]; then ready=1; break; fi; \
 			sleep 1; \
+			i=$$((i + 1)); \
 		done; \
-		if [[ $$ready -ne 1 ]]; then \
+		if [ "$$ready" -ne 1 ]; then \
 			echo "FAIL: нет HTTP 200/301/302 за warm-up. Выполни make start (деплой+tunnel), проверь Nginx на VPS → 127.0.0.1:$(RELAY_REMOTE_PORT). См. docs/vps-relay-nginx.conf.example"; \
 			exit 1; \
 		fi; \
 		ok=1; \
-		for i in {1..10}; do \
+		i=1; while [ "$$i" -le 10 ]; do \
 			code=$$(curl --max-time 8 -s -o /dev/null -w '%{http_code}' "$$url"); \
 			echo "$$i:$$code"; \
-			if [[ "$$code" != "200" && "$$code" != "301" && "$$code" != "302" ]]; then ok=0; fi; \
+			if [ "$$code" != "200" ] && [ "$$code" != "301" ] && [ "$$code" != "302" ]; then ok=0; fi; \
 			sleep 1; \
+			i=$$((i + 1)); \
 		done; \
-		if [[ $$ok -eq 1 ]]; then \
+		if [ "$$ok" -eq 1 ]; then \
 			echo "PASS: 10/10 ответов в ожидаемых кодах (200/301/302)"; \
 		else \
 			echo "FAIL: встречен неожиданный HTTP-код"; \
@@ -106,14 +111,15 @@ relay-up:
 		"sudo systemctl reload nginx 2>/dev/null || sudo systemctl restart nginx"
 	@echo "Ожидание HTTP 200 с lb-1 (локально) ..."
 	@ok=0; \
-	for i in {1..15}; do \
+	i=1; while [ "$$i" -le 15 ]; do \
 		code=$$(ssh -i "$(SSH_KEY)" -o StrictHostKeyChecking=no $(SSH_USER)@$(LB_IP) \
 			"curl --max-time 5 -s -o /dev/null -w '%{http_code}' http://127.0.0.1/"); \
 		echo "$$i:$$code"; \
-		if [[ "$$code" == "200" || "$$code" == "301" || "$$code" == "302" ]]; then ok=1; break; fi; \
+		if [ "$$code" = "200" ] || [ "$$code" = "301" ] || [ "$$code" = "302" ]; then ok=1; break; fi; \
 		sleep 1; \
+		i=$$((i + 1)); \
 	done; \
-	if [[ $$ok -ne 1 ]]; then \
+	if [ "$$ok" -ne 1 ]; then \
 		echo "Локальный LB не отвечает 200/301/302. Выполни make start."; \
 		exit 1; \
 	fi
