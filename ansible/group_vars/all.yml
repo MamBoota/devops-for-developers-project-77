@@ -1,0 +1,27 @@
+---
+pip_install_packages:
+  - name: docker
+
+# Redmine container settings
+redmine_image: "redmine:6.1"
+redmine_port: 80
+redmine_container_port: 3000
+redmine_container_name: "redmine"
+redmine_restart_policy: "unless-stopped"
+
+# DB settings
+# Supported values for redmine_db_adapter: postgresql, mysql
+redmine_db_adapter: "postgresql"
+redmine_db_host: "192.168.2.4"
+redmine_db_port: 5432
+redmine_db_name: "redmine"
+redmine_db_user: "redmine"
+
+# Optional SMTP settings for notifications
+# redmine_smtp_enabled: true
+# redmine_smtp_address: "smtp.example.com"
+# redmine_smtp_port: "587"
+# redmine_smtp_user_name: "user"
+# redmine_smtp_password: "password"
+# redmine_smtp_domain: "example.com"
+# redmine_smtp_authentication: "login"

@@ -1,0 +1,8 @@
+---
+- name: Deploy Redmine on webservers
+  hosts: webservers
+  become: true
+  roles:
+    - docker
+    - redmine
+

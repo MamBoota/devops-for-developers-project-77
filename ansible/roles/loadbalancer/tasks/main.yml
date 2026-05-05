@@ -1,0 +1,93 @@
+---
+- name: Check if Nginx is already installed
+  ansible.builtin.command: nginx -v
+  register: nginx_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install Nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: false
+  when: nginx_installed.rc != 0
+
+- name: Install OpenSSL
+  ansible.builtin.apt:
+    name: openssl
+    state: present
+    update_cache: false
+  when: nginx_installed.rc != 0
+
+- name: Ensure SSL directory exists
+  ansible.builtin.file:
+    path: /etc/nginx/ssl
+    state: directory
+    mode: "0755"
+
+- name: Create self-signed certificate for HTTPS
+  ansible.builtin.command: >
+    openssl req -x509 -nodes -days 365
+    -newkey rsa:2048
+    -keyout /etc/nginx/ssl/server.key
+    -out /etc/nginx/ssl/server.crt
+    -subj "/CN=localhost"
+  args:
+    creates: /etc/nginx/ssl/server.crt
+
+- name: Configure Nginx reverse proxy for Redmine (HTTPS)
+  ansible.builtin.template:
+    src: redmine-lb.conf.j2
+    dest: /etc/nginx/sites-available/redmine-lb.conf
+    mode: "0644"
+  notify: Reload Nginx
+
+- name: Enable Redmine load balancer site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/redmine-lb.conf
+    dest: /etc/nginx/sites-enabled/redmine-lb.conf
+    state: link
+  notify: Reload Nginx
+
+- name: Disable default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload Nginx
+
+- name: Validate nginx config
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Ensure nginx service is enabled and started
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Apply pending nginx handler changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Check LB endpoint over HTTP (redirect allowed)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ redmine_port }}/"
+    method: GET
+    follow_redirects: none
+    status_code: [301, 302]
+  register: lb_http_healthcheck
+  retries: 10
+  delay: 3
+  until: lb_http_healthcheck.status in [200, 301, 302]
+
+- name: Check LB endpoint over HTTPS (self-signed)
+  ansible.builtin.uri:
+    url: "https://127.0.0.1/"
+    method: GET
+    return_content: false
+    validate_certs: false
+    status_code: [200, 301, 302]
+  register: lb_https_healthcheck
+  retries: 10
+  delay: 3
+  until: lb_https_healthcheck.status in [200, 301, 302]
+
