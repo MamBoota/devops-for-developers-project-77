@@ -1,3 +1,6 @@
+# Terraform Cloud / свой backend только локально; в CI Hexlet подмешивает backend "local".
+terraform/backend.tf
+
 .terraform/
 **/.terraform/
 .terraform.lock.hcl
