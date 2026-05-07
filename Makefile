@@ -25,8 +25,12 @@ LB_IP ?= 192.168.2.5
 
 .PHONY: start stop test check ci setup lint upmon-probe relay-up relay-stop relay-status relay-logs tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy ansible-deps ansible-prepare ansible-deploy ansible-monitoring
 
-# Hexlet: docker compose run app make setup (см. github.com/Hexlet/project-action) — без этой цели CI падает.
-setup: ansible-deps tf-init
+# Hexlet: docker compose run app make setup.
+# В CI/Docker пропускаем ansible-galaxy (зависит от внешней сети), оставляем terraform init.
+setup: tf-init
+	@if [ -z "$$GITHUB_ACTIONS" ] && [ -z "$$CI" ] && [ ! -f /.dockerenv ]; then \
+		$(MAKE) ansible-deps; \
+	fi
 	@echo "OK: setup"
 
 # Образ Hexlet кладёт ansible-lint.yml в корень проекта, код — в подкаталог: ищем конфиг в . и ..
@@ -53,13 +57,14 @@ upmon-probe:
 	@test -f scripts/upmon.local.env || (echo "Создай scripts/upmon.local.env: cp scripts/upmon.local.env.example scripts/upmon.local.env и задай UPMON_PING_URL"; exit 1)
 	@./scripts/upmon-probe.sh
 
-# Проверки: terraform validate; локально с .vault_pass — ping VM, self-heal, HTTP. В CI нет .vault_pass — только syntax-check (без расшифровки vault).
-test: ansible-deps tf-validate
+# Проверки: terraform validate; локально с .vault_pass — ping VM, self-heal, HTTP.
+# В CI/без vault: только Terraform-валидация (ansible-lint запускается отдельной целью lint).
+test: tf-validate
 	@if [ -n "$$GITHUB_ACTIONS" ] || [ -n "$$CI" ] || [ ! -f .vault_pass ]; then \
-		echo "=== CI или нет .vault_pass: ansible syntax-check без vault (без SSH к VM) ==="; \
-		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --syntax-check; \
-		echo "OK: статические проверки (Terraform + Ansible syntax). Полный прогон: локально с .vault_pass выполни make test."; \
+		echo "=== CI или нет .vault_pass: только terraform validate ==="; \
+		echo "OK: статическая проверка Terraform. Локально с .vault_pass выполни make test для полного прогона."; \
 	else \
+		$(MAKE) ansible-deps; \
 		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible -i $(ANSIBLE_DIR)/inventory.ini all -m ping --vault-password-file .vault_pass; \
 		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --syntax-check --vault-password-file .vault_pass; \
 		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --tags prepare,deploy,monitoring --vault-password-file .vault_pass >/tmp/make-test-self-heal.log 2>&1 || (echo "Self-heal failed. Last lines:"; tail -n 40 /tmp/make-test-self-heal.log; exit 1); \
