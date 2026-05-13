@@ -17,59 +17,49 @@
     dest: /opt/redmine/.env
     mode: "0600"
 
-- name: Pull application image on control node
-  ansible.builtin.command:
-    cmd: "docker image inspect {{ redmine_image }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  register: redmine_image_present
-  changed_when: false
-  failed_when: false
+- name: Prepare application image tarball on control node
+  block:
+    - name: Inspect application image on control node
+      community.docker.docker_image_info:
+        name: "{{ redmine_image }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      register: redmine_image_local
 
-- name: Pull application image on control node
-  ansible.builtin.command:
-    cmd: "docker pull {{ redmine_image }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  changed_when: false
-  when: redmine_image_present.rc != 0
+    - name: Pull application image on control node
+      community.docker.docker_image_pull:
+        name: "{{ redmine_image }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      when: redmine_image_local.images | length == 0
 
-- name: Save application image archive on control node
-  ansible.builtin.command:
-    cmd: "docker save -o {{ redmine_image_archive_local_path }} {{ redmine_image }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  changed_when: false
+    - name: Export application image to tarball on control node
+      community.docker.docker_image_export:
+        names:
+          - "{{ redmine_image }}"
+        path: "{{ redmine_image_archive_local_path }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
 
-- name: Check if application image exists on web host
-  ansible.builtin.command:
-    cmd: "docker image inspect {{ redmine_image }}"
+- name: Inspect application image on web host
+  community.docker.docker_image_info:
+    name: "{{ redmine_image }}"
   register: redmine_image_on_web
-  changed_when: false
-  failed_when: false
 
 - name: Copy image archive to web host
   ansible.builtin.copy:
     src: "{{ redmine_image_archive_local_path }}"
     dest: "{{ redmine_image_archive_remote_path }}"
     mode: "0644"
-  when: redmine_image_on_web.rc != 0
+  when: redmine_image_on_web.images | length == 0
 
-- name: Prune old Docker data before image load
-  ansible.builtin.command:
-    cmd: docker system prune -af
-  changed_when: false
-  failed_when: false
-  when: redmine_image_on_web.rc != 0
-
-- name: Load application image on web host
-  ansible.builtin.command:
-    cmd: "docker load -i {{ redmine_image_archive_remote_path }}"
-  changed_when: false
-  when: redmine_image_on_web.rc != 0
+- name: Load application image from archive on web host
+  community.docker.docker_image_load:
+    path: "{{ redmine_image_archive_remote_path }}"
+  when: redmine_image_on_web.images | length == 0
 
 - name: Start or update Redmine container
   community.docker.docker_container:
