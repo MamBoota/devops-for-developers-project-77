@@ -44,7 +44,6 @@ check: test
 ci: lint test
 
 # Один шаг: Ansible (prepare+deploy+monitoring) + reverse SSH на VPS (публичный URL).
-# Роль redmine сама ставит pip-пакеты requests+docker на control node для localhost (нужен выход в PyPI).
 start: ansible-deps
 	ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --tags prepare,deploy,monitoring --vault-password-file .vault_pass
 	@$(MAKE) relay-up
@@ -58,9 +57,8 @@ upmon-probe:
 	@test -f scripts/upmon.local.env || (echo "Создай scripts/upmon.local.env: cp scripts/upmon.local.env.example scripts/upmon.local.env и задай UPMON_PING_URL"; exit 1)
 	@./scripts/upmon-probe.sh
 
-# Проверки: terraform validate; локально с .vault_pass — ping, self-heal, внутренний LB, опционально публичный HTTPS.
-# Публичный URL: без relay часто 502 — по умолчанию WARN и exit 0; RELAY_STRICT=1 — требовать 200/301/302. TEST_PUBLIC_URL=0 — не дергать домен.
-# В CI/без vault: только Terraform-валидация (ansible-lint — цель lint).
+# Проверки: terraform validate; локально с .vault_pass — ping VM, self-heal, HTTP.
+# В CI/без vault: только Terraform-валидация (ansible-lint запускается отдельной целью lint).
 test: tf-validate
 	@if [ -n "$$GITHUB_ACTIONS" ] || [ -n "$$CI" ] || [ ! -f .vault_pass ]; then \
 		echo "=== CI или нет .vault_pass: только terraform validate ==="; \
@@ -70,24 +68,6 @@ test: tf-validate
 		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible -i $(ANSIBLE_DIR)/inventory.ini all -m ping --vault-password-file .vault_pass; \
 		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --syntax-check --vault-password-file .vault_pass; \
 		ANSIBLE_COLLECTIONS_PATH=$(ANSIBLE_COLLECTIONS_DIR) ansible-playbook -i $(ANSIBLE_DIR)/inventory.ini $(ANSIBLE_DIR)/playbook.yml --tags prepare,deploy,monitoring --vault-password-file .vault_pass >/tmp/make-test-self-heal.log 2>&1 || (echo "Self-heal failed. Last lines:"; tail -n 40 /tmp/make-test-self-heal.log; exit 1); \
-		echo "Проверка внутреннего LB http://$(LB_IP)/ ..."; \
-		lb_ready=0; \
-		i=1; while [ "$$i" -le 15 ]; do \
-			code=$$(curl --max-time 8 -s -o /dev/null -w '%{http_code}' "http://$(LB_IP)/"); \
-			echo "lb warmup $$i:$$code"; \
-			if [ "$$code" = "200" ] || [ "$$code" = "301" ] || [ "$$code" = "302" ]; then lb_ready=1; break; fi; \
-			sleep 1; \
-			i=$$((i + 1)); \
-		done; \
-		if [ "$$lb_ready" -ne 1 ]; then \
-			echo "FAIL: внутренний LB на $(LB_IP) не ответил 200/301/302. См. nginx на lb-1 и приложение на web-узлах."; \
-			exit 1; \
-		fi; \
-		echo "OK: внутренний LB отвечает."; \
-		if [ "$${TEST_PUBLIC_URL:-1}" = "0" ]; then \
-			echo "SKIP публичного HTTPS (TEST_PUBLIC_URL=0). Для проверки домена: make start, затем RELAY_STRICT=1 make test."; \
-			exit 0; \
-		fi; \
 		url="$$(terraform -chdir=$(TF_DIR) output -raw application_url 2>/dev/null || true)"; \
 		if [ -z "$$url" ] && [ -f "$(TF_DIR)/terraform.tfvars" ]; then \
 			domain=$$(awk -F'"' '/redmine_domain/{print $$2; exit}' "$(TF_DIR)/terraform.tfvars"); \
@@ -95,42 +75,32 @@ test: tf-validate
 		fi; \
 		if [ -z "$$url" ]; then url="https://$(DOMAIN)"; fi; \
 		url="$${url%/}"; \
-		echo "Проверка публичного URL $$url (нужен relay на VPS; RELAY_STRICT=1 — падать при ошибке) ..."; \
+		echo "Testing $$url (TLS на VPS; локальный lb-1 — HTTP, см. README и make relay-up) ..."; \
 		ready=0; \
 		i=1; while [ "$$i" -le 15 ]; do \
 			code=$$(curl --max-time 8 -s -o /dev/null -w '%{http_code}' "$$url"); \
-			echo "public warmup $$i:$$code"; \
+			echo "warmup $$i:$$code"; \
 			if [ "$$code" = "200" ] || [ "$$code" = "301" ] || [ "$$code" = "302" ]; then ready=1; break; fi; \
 			sleep 1; \
 			i=$$((i + 1)); \
 		done; \
 		if [ "$$ready" -ne 1 ]; then \
-			if [ "$${RELAY_STRICT}" = "1" ]; then \
-				echo "FAIL: публичный URL без 200/301/302. make start (деплой+tunnel), Nginx на VPS → 127.0.0.1:$(RELAY_REMOTE_PORT). См. docs/vps-relay-nginx.conf.example"; \
-				exit 1; \
-			else \
-				echo "WARN: публичный URL недоступен (часто 502 без relay). Внутренний LB — OK; для строгой проверки: RELAY_STRICT=1 make test"; \
-				exit 0; \
-			fi; \
+			echo "FAIL: нет HTTP 200/301/302 за warm-up. Выполни make start (деплой+tunnel), проверь Nginx на VPS → 127.0.0.1:$(RELAY_REMOTE_PORT). См. docs/vps-relay-nginx.conf.example"; \
+			exit 1; \
 		fi; \
 		ok=1; \
 		i=1; while [ "$$i" -le 10 ]; do \
 			code=$$(curl --max-time 8 -s -o /dev/null -w '%{http_code}' "$$url"); \
-			echo "public $$i:$$code"; \
+			echo "$$i:$$code"; \
 			if [ "$$code" != "200" ] && [ "$$code" != "301" ] && [ "$$code" != "302" ]; then ok=0; fi; \
 			sleep 1; \
 			i=$$((i + 1)); \
 		done; \
 		if [ "$$ok" -eq 1 ]; then \
-			echo "PASS: публичный URL — 10/10 ответов 200/301/302"; \
+			echo "PASS: 10/10 ответов в ожидаемых кодах (200/301/302)"; \
 		else \
-			if [ "$${RELAY_STRICT}" = "1" ]; then \
-				echo "FAIL: нестабильный публичный HTTP-код"; \
-				exit 1; \
-			else \
-				echo "WARN: публичный URL нестабилен; внутренний LB уже проверен."; \
-				exit 0; \
-			fi; \
+			echo "FAIL: встречен неожиданный HTTP-код"; \
+			exit 1; \
 		fi; \
 	fi
 

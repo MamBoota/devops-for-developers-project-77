@@ -17,25 +17,8 @@
     dest: /opt/redmine/.env
     mode: "0600"
 
-# На control node (delegate_to: localhost) community.docker требует requests (+ docker) в том же Python.
-# Цепочка интерпретатора: ansible_controller_python → $ANSIBLE_CONTROLLER_PYTHON → ansible_playbook_python;
-# первый шаг ставит пакеты через pip --user (PEP 668: break_system_packages на «системных» Homebrew Python).
 - name: Prepare application image tarball on control node
-  vars:
-    ansible_python_interpreter: "{{ ansible_controller_python | default(lookup('env', 'ANSIBLE_CONTROLLER_PYTHON')) | default(ansible_playbook_python, true) }}"
   block:
-    - name: Ensure controller Python has requests and docker SDK for localhost API modules
-      ansible.builtin.pip:
-        name:
-          - requests
-          - docker
-        state: present
-        extra_args: --user
-        break_system_packages: true
-      delegate_to: localhost
-      become: false
-      run_once: true
-
     - name: Inspect application image on control node
       community.docker.docker_image_info:
         name: "{{ redmine_image }}"

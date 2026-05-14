@@ -1,8 +1,5 @@
 collections:
-  # Материалы курса: community.general.docker_container (редирект на community.docker).
-  - name: community.general
-    version: ">=8.6.0"
-  # docker_image_export — с 3.7.0; docker_image_pull — с 3.6.0.
+  # docker_image_export — с 3.7.0; docker_image_pull — с 3.6.0; вместе нужен floor 3.7.0.
   - name: community.docker
     version: ">=3.7.0"
   - name: datadog.dd
